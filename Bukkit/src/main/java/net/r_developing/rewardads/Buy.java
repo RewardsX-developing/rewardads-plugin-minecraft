@@ -1,0 +1,175 @@
+package net.r_developing.rewardads;
+
+import me.clip.placeholderapi.PlaceholderAPI;
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public class Buy {
+    private final Fetcher fetcher;
+    private final Api api;
+    private final Platform platform;
+    private final Config config;
+    private final Messager messager;
+    private final Plugin plugin;
+    private final ProxySender proxySender;
+    private final AdBits adBits;
+
+    public Buy(Plugin plugin, Fetcher fetcher, Api api, Platform platform, Config config, Messager messager, ProxySender proxySender, AdBits adBits) {
+        this.fetcher = fetcher;
+        this.api = api;
+        this.platform = platform;
+        this.config = config;
+        this.messager = messager;
+        this.plugin = plugin;
+        this.proxySender = proxySender;
+        this.adBits = adBits;
+    }
+
+    public void send(Player player, String rewardName) {
+        if(!platform.isProxy()) {
+            String quantity = "1";
+            String platformId = platform.getId();
+            String userId = config.getUserId(player.getUniqueId());
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("id", rewardName);
+            payload.put("quantity", quantity);
+            payload.put("platform", platformId);
+            payload.put("userid", userId);
+
+            api.send("buy", payload, result -> {
+                if(result != null) {
+                    boolean success = Boolean.parseBoolean((String) result.get("success"));
+                    String message = result.getOrDefault("message", "Unknown response").toString().toLowerCase().trim();
+
+                    String costStr = result.get("cost").toString();
+                    int cost = 0;
+                    if (costStr != null && !costStr.isEmpty()) {
+                        try {
+                            cost = Integer.parseInt(costStr);
+                        } catch(NumberFormatException ignored) {}
+                    }
+
+                    if (success) {
+                        if (config.getUserId(player.getUniqueId()) != null) {
+                            adBits.removeAdBits(player, cost);
+                            player.sendMessage(messager.get("buySuccess"));
+                        } else {
+                            player.sendMessage(messager.get("notConnected"));
+                        }
+                    } else {
+                        if (message.contains("for your platform")) {
+                            player.sendMessage(messager.get("ownPlatform"));
+                        } else if (message.contains("seconds between buy requests")) {
+                            player.sendMessage(messager.get("waitBuy"));
+                        } else {
+                            player.sendMessage(messager.get("insufficientAdBits"));
+                        }
+                    }
+                } else {
+                    player.sendMessage(ChatColor.RED + "INTERNAL ERROR: No response from server.");
+                }
+            });
+        } else proxySender.sendCommand(player, "BUY", rewardName);
+    }
+
+    public void confirm(String userId, String buyId) {
+        Player player = config.getPlayerById(userId);
+        if(player == null) {
+            return;
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("id", buyId);
+        payload.put("user", userId);
+
+        api.send("redeempurchase", payload, result -> {
+            if(result != null) {
+                boolean success = Boolean.parseBoolean((String) result.get("success"));
+                String message = result.getOrDefault("message", "Unknown response").toString().toLowerCase();
+
+                if(success) {
+                    executeCommand(buyId, player);
+                    player.sendMessage(messager.get("rewardReceived"));
+                } else {
+                    player.sendMessage(ChatColor.RED + message);
+                }
+            } else {
+                player.sendMessage(ChatColor.RED + "INTERNAL ERROR: No response from server.");
+            }
+        });
+    }
+
+    public void confirm(String userId, String buyId, String username) {
+        Player player = Bukkit.getPlayerExact(username);
+        if(player == null) {
+            return;
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("id", buyId);
+        payload.put("user", userId);
+
+        api.send("redeempurchase", payload, result -> {
+            if(result != null) {
+                boolean success = Boolean.parseBoolean((String) result.get("success"));
+                String message = result.getOrDefault("message", "Unknown response").toString().toLowerCase().trim();
+
+                if(success) {
+                    executeCommand(buyId, player);
+                    player.sendMessage(messager.get("rewardReceived"));
+                } else {
+                    player.sendMessage(messager.custom("&c" + message));
+                }
+            } else {
+                player.sendMessage(messager.custom("&cINTERNAL ERROR: No response from server."));
+            }
+        });
+    }
+
+    private void executeCommand(String rewardId, Player player) {
+        if(config.getRewardsConfig() == null) return;
+        List<String> commands = config.getRewardsConfig().getStringList(rewardId + ".commands");
+
+        if(commands != null && !commands.isEmpty() && player != null) {
+            for(String cmd : commands) {
+                cmd = cmd.replace("&", "§");
+                cmd = cmd.replace("%player%", player.getName());
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
+            }
+        } else {
+            assert player != null;
+            player.sendMessage(messager.get("actionNotFound"));
+            plugin.getLogger().warning("Action for reward " + rewardId + " not found, please add it!");
+        }
+    }
+
+    public void executeCommand(Player player, String cmd) {
+        if(config.getRewardsConfig() == null) return;
+
+        if(cmd != null && player != null) {
+            cmd = cmd.replace("&", "§").replace("%player%", player.getName());
+            if(Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI"))
+                cmd = PlaceholderAPI.setPlaceholders(player, cmd);
+
+            boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
+            if(!success) plugin.getLogger().warning("Failed to execute command: " + cmd);
+        } else {
+            if(player != null)
+                player.sendMessage(messager.get("actionNotFound"));
+            plugin.getLogger().warning("Action not found, or player is invalid!");
+        }
+    }
+
+    public int getBuys(Player player) {
+        String userId = config.getUserId(player.getUniqueId());
+        if(userId == null) return 0;
+        return fetcher.buysList.getOrDefault(userId, 0);
+    }
+}

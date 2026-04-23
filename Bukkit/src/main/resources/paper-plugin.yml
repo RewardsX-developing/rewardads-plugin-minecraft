@@ -1,0 +1,14 @@
+name: RewardADs
+main: net.r_developing.rewardads.rewardads
+version: 2026.04.22
+api-version: "1.21.11"
+description: RewardADs plugin for Paper
+authors:
+  - R_Developing
+
+dependencies:
+  server:
+    PlaceholderAPI:
+      load: BEFORE
+      required: false
+      join-classpath: true
