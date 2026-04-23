@@ -1,0 +1,19 @@
+# Pro tip: Use PlaceholderAPI in your Spigot/Paper/Purpur commands to unlock dynamic, customizable content.
+
+!!str REWARD_ID_1: # ID took from https://rewardads.me/dashboard
+  commands:
+    - "give %player% diamond 5"
+    - "broadcast %player% received 5 diamonds!"
+  server: "lobby" # Server name based on proxy configuration
+
+!!str REWARD_ID_2: # ID took from https://rewardads.me/dashboard
+  commands:
+    - "send %player% lobby"
+    - "alert %player% sent to lobby!"
+  server: "proxy" # Send to proxy server
+
+!!str REWARD_ID_3: # ID took from https://rewardads.me/dashboard
+  commands:
+    - "give %player% pumpkin 100"
+    - "broadcast %player% received 100 pumpkins!"
+  server: "all" # Send to all servers
