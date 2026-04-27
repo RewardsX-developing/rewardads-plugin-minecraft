@@ -40,6 +40,10 @@ public class Platform {
         Object value = config.getMainConfig().get("show_connect_message_on_join");
         return value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
     }
+    public boolean isRewardADsCommandEnabled() {
+        Object value = config.getMainConfig().get("enable_commands");
+        return value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+    }
 
     public boolean isDebug() {
         Object value = config.getMainConfig().get("debug");
@@ -47,7 +51,9 @@ public class Platform {
     }
 
     public void checkAndStart(Fetcher fetcher, Messager messager, Version version, QuickConnect quickConnect, AdBits adBits, Buy buy, Platform platform, Account account) {
-        ProxyServer.getInstance().getPluginManager().registerCommand(plugin, new Commands("rewardads", messager, config, version, quickConnect, adBits, this, fetcher, buy, proxySender, account));
+        if(isRewardADsCommandEnabled()) {
+            ProxyServer.getInstance().getPluginManager().registerCommand(plugin, new Commands("rewardads", messager, config, version, quickConnect, adBits, this, fetcher, buy, proxySender, account));
+        }
 
         isValid(valid -> {
             if(valid) {
