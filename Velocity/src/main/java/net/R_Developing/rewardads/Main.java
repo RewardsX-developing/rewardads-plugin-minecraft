@@ -21,7 +21,7 @@ import net.R_Developing.rewardads.Configs.MessagesConfig;
 @Plugin(
     id = "rewardads",
     name = "RewardADs",
-    version = "2026.04.22",
+    version = "2026.04.27",
     description = "RewardADs plugin for Velocity",
     authors = {"R_Developing"}
 )

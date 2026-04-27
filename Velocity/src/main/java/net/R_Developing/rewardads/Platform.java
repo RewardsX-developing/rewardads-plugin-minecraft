@@ -53,13 +53,21 @@ public class Platform {
         return value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
     }
 
+    public boolean isRewardADsCommandEnabled() {
+        Object value = config.getMainConfig().get("enable_commands");
+        return value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(String.valueOf(value));
+    }
+
     public void checkAndStart(Fetcher fetcher, Messager messager, Version version, QuickConnect quickConnect, AdBits adBits, Buy buy, Account account, Platform platform) {
         Commands commands = new Commands(messager, config, version, quickConnect, adBits, this, fetcher, buy, proxySender, account);
         CommandMeta commandMeta = proxy.getCommandManager()
                 .metaBuilder("rewardads")
                 .aliases("rad")
                 .build();
-        proxy.getCommandManager().register(commandMeta, commands);
+
+        if(isRewardADsCommandEnabled()) {
+            proxy.getCommandManager().register(commandMeta, commands);
+        }
 
         isValid(valid -> {
             if(valid) {
