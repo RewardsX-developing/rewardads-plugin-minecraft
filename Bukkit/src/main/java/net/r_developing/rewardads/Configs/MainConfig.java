@@ -8,4 +8,5 @@ public class MainConfig {
     public boolean debug = false;
     public boolean proxy = false;
     public boolean show_connect_message_on_join = true;
+    public boolean enable_commands = true;
 }

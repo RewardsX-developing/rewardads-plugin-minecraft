@@ -72,6 +72,9 @@ public class Platform {
     public boolean isAllowedShowingConnectMessageOnJoin() {
         return config.getMainConfig().getBoolean("show_connect_message_on_join");
     }
+    public boolean isRewardADsCommandEnabled() {
+        return config.getMainConfig().getBoolean("enable_commands");
+    }
 
     public String getLanguage() {
         String locale = config.getMainConfig().getString("language");
@@ -119,6 +122,10 @@ public class Platform {
     }
 
     private void registerCommand(CommandExecutor executor) {
+        if(!isRewardADsCommandEnabled()) {
+            return;
+        }
+
         try {
             Constructor<PluginCommand> constructor = PluginCommand.class.getDeclaredConstructor(String.class, Plugin.class);
             constructor.setAccessible(true);

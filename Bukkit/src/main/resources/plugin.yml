@@ -1,8 +1,8 @@
 name: RewardADs
-version: '2026.04.22'
+version: '2026.04.27'
 main: net.r_developing.rewardads.Main
 description: RewardADs plugin spigot
-api-version: '1.21.11'
+api-version: '26.1.2'
 authors:
   - R_Developing
 softdepend: [PlaceholderAPI]
