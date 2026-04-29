@@ -65,9 +65,21 @@ public class Fetcher {
                     List<Map<String, Object>> list = (List<Map<String, Object>>) result.get("buys");
                     if (list != null) {
                         for (Map<String, Object> o : list) {
-                            String idPlayer = (String) o.get("id_player");
-                            int count = ((Number) o.get("buys_count")).intValue();
-                            buysList.put(idPlayer, count);
+                            String idPlayer = Objects.toString(o.get("id_player"), null);
+                            if (idPlayer != null) {
+                                int count = 0;
+                                Object countObj = o.get("buys_count");
+                                if (countObj != null) {
+                                    if (countObj instanceof Number) {
+                                        count = ((Number) countObj).intValue();
+                                    } else if (countObj instanceof String) {
+                                        try {
+                                            count = Integer.parseInt(((String) countObj).trim());
+                                        } catch (NumberFormatException ignored) {}
+                                    }
+                                }
+                                buysList.put(idPlayer, count);
+                            }
                         }
                     }
                 }
@@ -83,9 +95,21 @@ public class Fetcher {
                     List<Map<String, Object>> list = (List<Map<String, Object>>) result.get("adbits");
                     if (list != null) {
                         for (Map<String, Object> o : list) {
-                            String idPlayer = (String) o.get("id_player");
-                            int adbits = ((Number) o.get("adbits_player")).intValue();
-                            adbitsList.put(idPlayer, adbits);
+                            String idPlayer = Objects.toString(o.get("id_player"), null);
+                            if (idPlayer != null) {
+                                int adbits = 0;
+                                Object adbitsObj = o.get("adbits_player");
+                                if (adbitsObj != null) {
+                                    if (adbitsObj instanceof Number) {
+                                        adbits = ((Number) adbitsObj).intValue();
+                                    } else if (adbitsObj instanceof String) {
+                                        try {
+                                            adbits = Integer.parseInt(((String) adbitsObj).trim());
+                                        } catch (NumberFormatException ignored) {}
+                                    }
+                                }
+                                adbitsList.put(idPlayer, adbits);
+                            }
                         }
                     }
                 }

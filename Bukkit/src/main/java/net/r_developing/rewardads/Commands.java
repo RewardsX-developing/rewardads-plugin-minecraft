@@ -9,6 +9,7 @@ import org.bukkit.entity.Player;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 public class Commands implements CommandExecutor, TabCompleter {
@@ -23,7 +24,12 @@ public class Commands implements CommandExecutor, TabCompleter {
     private final Buy buy;
     private final Account account;
 
-    public Commands(RewardsGUI rewardsGUI, Messager messager, Config config, Version version, QuickConnect quickConnect, AdBits adBits, Platform platform, Fetcher fetcher, Buy buy, Account account) {
+    private volatile boolean platformValid = false;  // Startup validation
+    private volatile boolean isProxy = false;        // Cached proxy state
+
+    public Commands(RewardsGUI rewardsGUI, Messager messager, Config config, Version version,
+                    QuickConnect quickConnect, AdBits adBits, Platform platform, Fetcher fetcher,
+                    Buy buy, Account account) {
         this.rewardsGUI = rewardsGUI;
         this.messager = messager;
         this.config = config;
@@ -34,136 +40,168 @@ public class Commands implements CommandExecutor, TabCompleter {
         this.fetcher = fetcher;
         this.buy = buy;
         this.account = account;
+
+        // Check both on startup
+        checkPlatformOnStartup();
+    }
+
+    private void checkPlatformOnStartup() {
+        // Check proxy state first (synchronous)
+        this.isProxy = platform.isProxy();
+
+        // Then async validation
+        platform.isValid(valid -> {
+            this.platformValid = valid;
+            if (!valid) {
+                System.err.println("[RewardADs] Platform invalid. Limited mode enabled.");
+            }
+        });
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if(args.length == 0) {
-            if(platform.isProxy())
+        boolean limitedMode = isProxy || !platformValid;
+
+        if (args.length == 0) {
+            if (limitedMode) {
                 sendMinimalHelp(sender);
-            else
+            } else {
                 sendHelp(sender);
-        } else {
-            switch(args[0]) {
-                case "reload":
-                case "rel":
-                    if(sender.isOp() || sender.hasPermission("rewardads.admin") || sender.hasPermission("rewardads.reload")) {
-                        config.reloadConfigs();
-                        platform.checkAndStart(fetcher, rewardsGUI, messager, version, quickConnect, adBits, buy, account);
-                        //messager.reload();
-                        sender.sendMessage(messager.get("reload"));
-                    } else {
-                        sender.sendMessage(messager.get("noPermission"));
-                    }
-                    break;
-                case "version":
-                case "ver":
-                    if(sender.isOp() || sender.hasPermission("rewardads.admin") || sender.hasPermission("rewardads.version")) {
-                        sender.sendMessage((String.format(messager.get("currentVersion"), version.currentVersion())));
-                        version.checkVersion(sender);
-                    } else {
-                        sender.sendMessage(messager.get("noPermission"));
-                    }
-                    break;
-                case "buy":
-                case "purchase":
-                    platform.isValid(valid -> {
-                        boolean isProxy = platform.isProxy();
-                        if(!valid || isProxy) {
-                            sender.sendMessage(messager.get("platformNotReady"));
-                            return;
-                        }
-
-                        if(sender instanceof Player) {
-                            Player player = (Player) sender;
-
-                            if(quickConnect.isConnected(player)) {
-                                if(args.length > 1) {
-                                    buy.send(player, args[1]);
-                                } else {
-                                    rewardsGUI.open(player);
-                                }
-                            } else {
-                                sender.sendMessage(messager.get("notConnected"));
-                            }
-                        } else {
-                            sender.sendMessage(messager.get("onlyConsole"));
-                        }
-                    });
-                    break;
-                case "quickconnect":
-                case "connect":
-                    platform.isValid(valid -> {
-                        if(!valid || platform.isProxy()) {
-                            sender.sendMessage(messager.get("platformNotReady"));
-                            return;
-                        }
-                        if(args.length > 1) {
-                            quickConnect.connect(sender, args[1]);
-                        } else {
-                            quickConnect.sendInsertCode((Player) sender);
-                        }
-                    });
-                    break;
-                case "disconnect":
-                case "quickdisconnect":
-                    platform.isValid(valid -> {
-                        if(!valid || platform.isProxy()) {
-                            sender.sendMessage(messager.get("platformNotReady"));
-                            return;
-                        }
-                        quickConnect.disconnect(sender);
-                    });
-                    break;
-                case "myaccount":
-                case "account":
-                    platform.isValid(valid -> {
-                        if(!valid || platform.isProxy()) {
-                            sender.sendMessage(messager.get("platformNotReady"));
-                            return;
-                        }
-                        account.sendDetails((Player) sender);
-                    });
-                    break;
-                default:
-                    if(platform.isProxy() || !(sender instanceof Player)) {
-                        sendMinimalHelp(sender);
-                    } else {
-                        sendHelp(sender);
-                    }
             }
+            return true;
         }
 
+        switch (args[0].toLowerCase()) {
+            case "reload":
+            case "rel":
+                if (hasPermission(sender, "rewardads.reload")) {
+                    config.reloadConfigs();
+                    platform.checkAndStart(fetcher, rewardsGUI, messager, version, quickConnect, adBits, buy, account);
+                    this.isProxy = platform.isProxy();
+                    platform.isValid(valid -> this.platformValid = valid);
+                    sender.sendMessage(messager.get("reload"));
+                } else {
+                    sender.sendMessage(messager.get("noPermission"));
+                }
+                break;
+
+            case "version":
+            case "ver":
+                if (hasPermission(sender, "rewardads.version")) {
+                    sender.sendMessage(String.format(messager.get("currentVersion"), version.currentVersion()));
+                    version.checkVersion(sender);
+                } else {
+                    sender.sendMessage(messager.get("noPermission"));
+                }
+                break;
+
+            case "buy":
+            case "purchase":
+                handlePlayerOnlyCommand(sender, () -> {
+                    if (limitedMode) {
+                        sender.sendMessage(messager.get("platformNotReady"));
+                        return;
+                    }
+                    Player player = (Player) sender;
+                    if (quickConnect.isConnected(player)) {
+                        if (args.length > 1) {
+                            buy.send(player, args[1]);
+                        } else {
+                            rewardsGUI.open(player);
+                        }
+                    } else {
+                        sender.sendMessage(messager.get("notConnected"));
+                    }
+                });
+                break;
+
+            case "quickconnect":
+            case "connect":
+                if (limitedMode) {
+                    sender.sendMessage(messager.get("platformNotReady"));
+                    return true;
+                }
+                if (args.length > 1) {
+                    quickConnect.connect(sender, args[1]);
+                } else if (sender instanceof Player player) {
+                    quickConnect.sendInsertCode(player);
+                }
+                break;
+
+            case "disconnect":
+            case "quickdisconnect":
+                if (limitedMode) {
+                    sender.sendMessage(messager.get("platformNotReady"));
+                    return true;
+                }
+                quickConnect.disconnect(sender);
+                break;
+
+            case "myaccount":
+            case "account":
+                handlePlayerOnlyCommand(sender, () -> {
+                    if (limitedMode) {
+                        sender.sendMessage(messager.get("platformNotReady"));
+                        return;
+                    }
+                    account.sendDetails((Player) sender);
+                });
+                break;
+
+            default:
+                if (limitedMode) {
+                    sendMinimalHelp(sender);
+                } else {
+                    sendHelp(sender);
+                }
+        }
         return true;
+    }
+
+    private void handlePlayerOnlyCommand(CommandSender sender, Runnable action) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage(messager.get("onlyPlayer"));
+            return;
+        }
+        action.run();
+    }
+
+    private boolean hasPermission(CommandSender sender, String permission) {
+        return sender.isOp() || sender.hasPermission("rewardads.admin") || sender.hasPermission(permission);
     }
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        List<String> suggestions = new ArrayList<>();
+        if (args.length != 1) return new ArrayList<>();
 
-        if (args.length == 1) {
-            suggestions.addAll(Arrays.asList("reload", "version", "buy", "connect", "disconnect", "account", "help"));
+        List<String> suggestions = new ArrayList<>(Arrays.asList("reload", "version"));
+        if (!isProxy && platformValid) {
+            suggestions.addAll(Arrays.asList("buy", "connect", "disconnect", "account"));
         }
 
         return suggestions.stream()
-                .filter(s -> s.toLowerCase().startsWith(args[args.length - 1].toLowerCase()))
+                .filter(s -> s.toLowerCase().startsWith(args[0].toLowerCase()))
+                .sorted()
                 .collect(Collectors.toList());
     }
 
     private void sendHelp(CommandSender sender) {
         sender.sendMessage("§8--- §6RewardADs Help §8[§bBukkit§8] ---");
         sender.sendMessage("");
-        sender.sendMessage("§8§l• §b/rewardads buy §f[name]§7- Open rewards gui");
-        sender.sendMessage("§8§l• §b/rewardads connect §f<code> §8- §7Connect to your account");
-        sender.sendMessage("§8§l• §b/rewardads disconnect §8- §7Disconnect from your account");
-        sender.sendMessage("§8§l• §b/rewardads reload §8- §7Reload the plugin config");
-        sender.sendMessage("§8§l• §b/rewardads version §8- §7Show plugin version");
+        sender.sendMessage("§8§l• §b/rewardads buy §f[name] §8- §7Open rewards GUI");
+        sender.sendMessage("§8§l• §b/rewardads connect §f<code> §8- §7Connect account");
+        sender.sendMessage("§8§l• §b/rewardads disconnect §8- §7Disconnect account");
+        sender.sendMessage("§8§l• §b/rewardads account §8- §7View account details");
+        sender.sendMessage("§8§l• §b/rewardads reload §8- §7Reload config");
+        sender.sendMessage("§8§l• §b/rewardads version §8- §7Check version");
     }
 
     private void sendMinimalHelp(CommandSender sender) {
-        sender.sendMessage("§8--- §6RewardADs Help §8[§cProxied§8] ---");
+        sender.sendMessage("§8--- §6RewardADs Help §8[§cLimited§8] ---");
         sender.sendMessage("");
-        sender.sendMessage("§8§l• §b/rewardads reload §7- Reload the plugin config");
-        sender.sendMessage("§8§l• §b/rewardads version §7- Show plugin version");
+        sender.sendMessage("§8§l• §b/rewardads reload §8- §7Reload config (Admin)");
+        sender.sendMessage("§8§l• §b/rewardads version §8- §7Check version");
+        sender.sendMessage("");
+        sender.sendMessage("§c" + (isProxy ? "Proxy mode" : "Platform invalid") + ". Use /rewardads reload");
     }
 }

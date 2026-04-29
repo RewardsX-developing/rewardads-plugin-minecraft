@@ -34,7 +34,7 @@ public class Fetcher {
 
     public void start() {
         plugin.getProxy().getScheduler().buildTask(plugin, () -> {
-            // Version check
+            // 1. Version check
             try (InputStream in = new URL("https://api.spiget.org/v2/resources/121867/versions/latest").openStream();
                  Scanner scanner = new Scanner(in)) {
 
@@ -50,7 +50,7 @@ public class Fetcher {
 
             List<String> userIds = config.getAllUserIds();
 
-            // getmultiplebuys
+            // 2. buys
             Map<String, Object> buysPayload = new HashMap<>();
             buysPayload.put("ids", userIds);
             api.send("getmultiplebuys", buysPayload, result -> {
@@ -60,15 +60,27 @@ public class Fetcher {
                     List<Map<String, Object>> list = (List<Map<String, Object>>) result.get("buys");
                     if (list != null) {
                         for (Map<String, Object> o : list) {
-                            String idPlayer = (String) o.get("id_player");
-                            int count = ((Number) o.get("buys_count")).intValue();
-                            buysList.put(idPlayer, count);
+                            String idPlayer = Objects.toString(o.get("id_player"), null);
+                            if (idPlayer != null) {
+                                int count = 0;
+                                Object countObj = o.get("buys_count");
+                                if (countObj != null) {
+                                    if (countObj instanceof Number) {
+                                        count = ((Number) countObj).intValue();
+                                    } else if (countObj instanceof String) {
+                                        try {
+                                            count = Integer.parseInt(((String) countObj).trim());
+                                        } catch (NumberFormatException ignored) {}
+                                    }
+                                }
+                                buysList.put(idPlayer, count);
+                            }
                         }
                     }
                 }
             });
 
-            // getmultipleadbits
+            // 3. adbits
             Map<String, Object> adbitsPayload = new HashMap<>();
             adbitsPayload.put("ids", userIds);
             api.send("getmultipleadbits", adbitsPayload, result -> {
@@ -78,15 +90,27 @@ public class Fetcher {
                     List<Map<String, Object>> list = (List<Map<String, Object>>) result.get("adbits");
                     if (list != null) {
                         for (Map<String, Object> o : list) {
-                            String idPlayer = (String) o.get("id_player");
-                            int adbits = ((Number) o.get("adbits_player")).intValue();
-                            adbitsList.put(idPlayer, adbits);
+                            String idPlayer = Objects.toString(o.get("id_player"), null);
+                            if (idPlayer != null) {
+                                int adbits = 0;
+                                Object adbitsObj = o.get("adbits_player");
+                                if (adbitsObj != null) {
+                                    if (adbitsObj instanceof Number) {
+                                        adbits = ((Number) adbitsObj).intValue();
+                                    } else if (adbitsObj instanceof String) {
+                                        try {
+                                            adbits = Integer.parseInt(((String) adbitsObj).trim());
+                                        } catch (NumberFormatException ignored) {}
+                                    }
+                                }
+                                adbitsList.put(idPlayer, adbits);
+                            }
                         }
                     }
                 }
             });
 
-            // getsuccessbuys
+            // 4. successbuys
             Map<String, Object> successBuysPayload = new HashMap<>();
             successBuysPayload.put("platform", platform.getId());
             api.send("getsuccessbuys", successBuysPayload, result -> {

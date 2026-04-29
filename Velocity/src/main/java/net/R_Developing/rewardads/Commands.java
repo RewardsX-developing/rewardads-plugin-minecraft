@@ -6,6 +6,7 @@ import com.velocitypowered.api.proxy.Player;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -21,6 +22,8 @@ public class Commands implements SimpleCommand {
     private final ProxySender proxySender;
     private final Account account;
 
+    private volatile boolean platformValid = false;  // Startup validation flag
+
     public Commands(Messager messager, Config config,
                     Version version, QuickConnect quickConnect, AdBits adBits, Platform platform,
                     Fetcher fetcher, Buy buy, ProxySender proxySender, Account account) {
@@ -34,6 +37,17 @@ public class Commands implements SimpleCommand {
         this.buy = buy;
         this.proxySender = proxySender;
         this.account = account;
+
+        checkPlatformOnStartup();
+    }
+
+    private void checkPlatformOnStartup() {
+        platform.isValid(valid -> {
+            this.platformValid = valid;
+            if (!valid) {
+                System.err.println("[RewardADs Velocity] Platform invalid. Limited mode enabled.");
+            }
+        });
     }
 
     @Override
@@ -41,172 +55,195 @@ public class Commands implements SimpleCommand {
         CommandSource sender = invocation.source();
         String[] args = invocation.arguments();
 
-        if(args.length == 0) {
-            sendHelp(sender);
-        } else {
-            switch(args[0].toLowerCase()) {
-                case "reload":
-                case "rel":
-                    if(sender.hasPermission("rewardads.admin") || sender.hasPermission("rewardads.version")) {
-                        config.reloadConfigs();
-                        messager.reload();
-                        platform.checkAndStart(fetcher, messager, version, quickConnect, adBits, buy, account, platform);
-                        sender.sendMessage(messager.getMessage("reload"));
-                    } else {
-                        sender.sendMessage(messager.getMessage("noPermission"));
-                    }
-                    break;
-                case "version":
-                case "ver":
-                    if(sender.hasPermission("rewardads.admin") || sender.hasPermission("rewardads.version")) {
-                        sender.sendMessage(messager.custom(String.format(messager.get("currentVersion"), version.currentVersion())));
-                        if(sender instanceof Player) {
-                            version.checkVersion((Player) sender);
-                        } else {
-                            version.checkVersion(null);
-                        }
-                    } else {
-                        sender.sendMessage(messager.getMessage("noPermission"));
-                    }
-                    break;
-                case "purchase":
-                case "buy":
-                    platform.isValid(valid -> {
-                        if(!valid) {
-                            sender.sendMessage(messager.getMessage("platformNotReady"));
-                            return;
-                        }
-                        if(sender instanceof Player player) {
-                            if(config.getUserId(player.getUniqueId()) != null) {
-                                if(args.length > 1) {
-                                    buy.send(player, args[1]);
-                                } else {
-                                    player.getCurrentServer().ifPresent(serverConnection -> {
-                                        String server = serverConnection.getServerInfo().getName();
-                                        proxySender.sendCommand(player, server, "OPENGUI", "");
-                                    });
-                                }
-                            } else {
-                                sender.sendMessage(messager.getMessage("notConnected"));
-                            }
-                        } else {
-                            sender.sendMessage(messager.getMessage("onlyConsole"));
-                        }
-                    });
-                    break;
-                case "quickconnect":
-                case "connect":
-                    platform.isValid(valid -> {
-                        if(!valid) {
-                            sender.sendMessage(messager.getMessage("platformNotReady"));
-                            return;
-                        }
-                        if(args.length > 1) {
-                            quickConnect.connect(sender, args[1]);
-                        } else {
-                            sender.sendMessage(messager.getMessage("insertCode"));
-                        }
-                    });
-                    break;
-                case "quickdisconnect":
-                case "disconnect":
-                    platform.isValid(valid -> {
-                        if(!valid) {
-                            sender.sendMessage(messager.getMessage("platformNotReady"));
-                            return;
-                        }
-                        quickConnect.disconnect(sender);
-                    });
-                    break;
-                case "myaccount":
-                case "account":
-                    if(sender instanceof Player) {
-                        account.sendDetails((Player) sender);
-                    } else {
-                        sender.sendMessage(messager.getMessage("onlyConsole"));
-                    }
-                    break;
-                default:
-                    if(sender instanceof Player) {
-                        sendHelp(sender);
-                    } else {
-                        sendMinimalHelp(sender);
-                    }
+        boolean limitedMode = !platformValid;
+
+        if (args.length == 0) {
+            if (limitedMode) {
+                sendMinimalHelp(sender);
+            } else {
+                sendHelp(sender);
             }
+            return;
         }
+
+        switch (args[0].toLowerCase()) {
+            case "reload":
+            case "rel":
+                if (hasPermission(sender, "rewardads.reload")) {
+                    config.reloadConfigs();
+                    messager.reload();
+                    platform.checkAndStart(fetcher, messager, version, quickConnect, adBits, buy, account, platform);
+                    platform.isValid(valid -> this.platformValid = valid);
+                    sender.sendMessage(messager.getMessage("reload"));
+                } else {
+                    sender.sendMessage(messager.getMessage("noPermission"));
+                }
+                break;
+
+            case "version":
+            case "ver":
+                if (hasPermission(sender, "rewardads.version")) {
+                    sender.sendMessage(messager.custom(String.format(messager.get("currentVersion"), version.currentVersion())));
+                    if (sender instanceof Player player) {
+                        version.checkVersion(player);
+                    } else {
+                        version.checkVersion(null);
+                    }
+                } else {
+                    sender.sendMessage(messager.getMessage("noPermission"));
+                }
+                break;
+
+            case "purchase":
+            case "buy":
+                handlePlayerOnlyCommand(sender, () -> {
+                    if (limitedMode) {
+                        sender.sendMessage(messager.getMessage("platformNotReady"));
+                        return;
+                    }
+                    Player player = (Player) sender;
+                    if (config.getUserId(player.getUniqueId()) != null) {
+                        if (args.length > 1) {
+                            buy.send(player, args[1]);
+                        } else {
+                            player.getCurrentServer().ifPresent(serverConnection -> {
+                                String server = serverConnection.getServerInfo().getName();
+                                proxySender.sendCommand(player, server, "OPENGUI", "");
+                            });
+                        }
+                    } else {
+                        sender.sendMessage(messager.getMessage("notConnected"));
+                    }
+                });
+                break;
+
+            case "quickconnect":
+            case "connect":
+                if (limitedMode) {
+                    sender.sendMessage(messager.getMessage("platformNotReady"));
+                    return;
+                }
+                if (args.length > 1) {
+                    quickConnect.connect(sender, args[1]);
+                } else {
+                    sender.sendMessage(messager.getMessage("insertCode"));
+                }
+                break;
+
+            case "quickdisconnect":
+            case "disconnect":
+                if (limitedMode) {
+                    sender.sendMessage(messager.getMessage("platformNotReady"));
+                    return;
+                }
+                quickConnect.disconnect(sender);
+                break;
+
+            case "myaccount":
+            case "account":
+                handlePlayerOnlyCommand(sender, () -> {
+                    if (limitedMode) {
+                        sender.sendMessage(messager.getMessage("platformNotReady"));
+                        return;
+                    }
+                    account.sendDetails((Player) sender);
+                });
+                break;
+
+            default:
+                if (limitedMode) {
+                    sendMinimalHelp(sender);
+                } else {
+                    sendHelp(sender);
+                }
+        }
+    }
+
+    private void handlePlayerOnlyCommand(CommandSource sender, Runnable action) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage(messager.getMessage("onlyConsole"));
+            return;
+        }
+        action.run();
+    }
+
+    private boolean hasPermission(CommandSource sender, String permission) {
+        return sender.hasPermission("rewardads.admin") || sender.hasPermission(permission);
     }
 
     @Override
     public List<String> suggest(Invocation invocation) {
         String[] args = invocation.arguments();
-        if(args.length <= 1)
-            return Arrays.asList("reload", "version", "buy", "account", "connect", "disconnect", "help");
+        if (args.length != 1) return new ArrayList<>();
 
-        return List.of();
+        List<String> suggestions = new ArrayList<>(Arrays.asList("reload", "version"));
+        if (platformValid) {
+            suggestions.addAll(Arrays.asList("buy", "connect", "disconnect", "account"));
+        }
+
+        return suggestions.stream()
+                .filter(s -> s.toLowerCase().startsWith(args[0].toLowerCase()))
+                .sorted()
+                .toList();
     }
 
     private void sendHelp(CommandSource sender) {
-        // Header line
-        sender.sendMessage(
-                Component.text("--- ", NamedTextColor.DARK_GRAY)
-                        .append(Component.text("RewardADs Help ", NamedTextColor.GOLD))
-                        .append(Component.text("[", NamedTextColor.DARK_GRAY))
-                        .append(Component.text("Velocity", NamedTextColor.BLUE))
-                        .append(Component.text("] ---", NamedTextColor.DARK_GRAY))
-        );
+        // Header
+        sender.sendMessage(Component.text()
+                .append(Component.text("--- ", NamedTextColor.DARK_GRAY))
+                .append(Component.text("RewardADs Help ", NamedTextColor.GOLD))
+                .append(Component.text("[", NamedTextColor.DARK_GRAY))
+                .append(Component.text("Velocity", NamedTextColor.GREEN))
+                .append(Component.text("] ---", NamedTextColor.DARK_GRAY)));
 
         sender.sendMessage(Component.empty());
 
-        // Individual help lines
-        sender.sendMessage(
-                Component.text("/rewardads buy ", NamedTextColor.AQUA)
-                        .append(Component.text("<name> ", NamedTextColor.WHITE))
-                        .append(Component.text("- Open rewards gui", NamedTextColor.GRAY))
-        );
+        sender.sendMessage(Component.text()
+                .append(Component.text("/rewardads buy ", NamedTextColor.AQUA))
+                .append(Component.text("<name> ", NamedTextColor.WHITE))
+                .append(Component.text("- Open rewards GUI", NamedTextColor.GRAY)));
 
-        sender.sendMessage(
-                Component.text("/rewardads connect ", NamedTextColor.AQUA)
-                        .append(Component.text("<code> ", NamedTextColor.WHITE))
-                        .append(Component.text("- Connect to your account", NamedTextColor.GRAY))
-        );
+        sender.sendMessage(Component.text()
+                .append(Component.text("/rewardads connect ", NamedTextColor.AQUA))
+                .append(Component.text("<code> ", NamedTextColor.WHITE))
+                .append(Component.text("- Connect account", NamedTextColor.GRAY)));
 
-        sender.sendMessage(
-                Component.text("/rewardads disconnect ", NamedTextColor.AQUA)
-                        .append(Component.text("- Disconnect from your account", NamedTextColor.GRAY))
-        );
+        sender.sendMessage(Component.text()
+                .append(Component.text("/rewardads disconnect ", NamedTextColor.AQUA))
+                .append(Component.text("- Disconnect account", NamedTextColor.GRAY)));
 
-        sender.sendMessage(
-                Component.text("/rewardads reload ", NamedTextColor.AQUA)
-                        .append(Component.text("- Reload the plugin config", NamedTextColor.GRAY))
-        );
+        sender.sendMessage(Component.text()
+                .append(Component.text("/rewardads account ", NamedTextColor.AQUA))
+                .append(Component.text("- Account details", NamedTextColor.GRAY)));
 
-        sender.sendMessage(
-                Component.text("/rewardads version ", NamedTextColor.AQUA)
-                        .append(Component.text("- Show plugin version", NamedTextColor.GRAY))
-        );
+        sender.sendMessage(Component.text()
+                .append(Component.text("/rewardads reload ", NamedTextColor.AQUA))
+                .append(Component.text("- Reload config", NamedTextColor.GRAY)));
+
+        sender.sendMessage(Component.text()
+                .append(Component.text("/rewardads version ", NamedTextColor.AQUA))
+                .append(Component.text("- Check version", NamedTextColor.GRAY)));
     }
 
     private void sendMinimalHelp(CommandSource sender) {
-        // Header line
-        sender.sendMessage(
-                Component.text("--- ", NamedTextColor.DARK_GRAY)
-                        .append(Component.text("RewardADs Help ", NamedTextColor.GOLD))
-                        .append(Component.text("[", NamedTextColor.DARK_GRAY))
-                        .append(Component.text("Velocity", NamedTextColor.RED))
-                        .append(Component.text("] ---", NamedTextColor.DARK_GRAY))
-        );
+        // Header
+        sender.sendMessage(Component.text()
+                .append(Component.text("--- ", NamedTextColor.DARK_GRAY))
+                .append(Component.text("RewardADs Help ", NamedTextColor.GOLD))
+                .append(Component.text("[", NamedTextColor.DARK_GRAY))
+                .append(Component.text("Limited", NamedTextColor.RED))
+                .append(Component.text("] ---", NamedTextColor.DARK_GRAY)));
 
         sender.sendMessage(Component.empty());
 
-        // Help lines
-        sender.sendMessage(
-                Component.text("/rewardads reload ", NamedTextColor.AQUA)
-                        .append(Component.text("- Reload the plugin config", NamedTextColor.GRAY))
-        );
+        sender.sendMessage(Component.text()
+                .append(Component.text("/rewardads reload ", NamedTextColor.AQUA))
+                .append(Component.text("- Reload config (Admin)", NamedTextColor.GRAY)));
 
-        sender.sendMessage(
-                Component.text("/rewardads version ", NamedTextColor.AQUA)
-                        .append(Component.text("- Show plugin version", NamedTextColor.GRAY))
-        );
+        sender.sendMessage(Component.text()
+                .append(Component.text("/rewardads version ", NamedTextColor.AQUA))
+                .append(Component.text("- Check version", NamedTextColor.GRAY)));
+
+        sender.sendMessage(Component.text("Platform not ready. Use /rewardads reload", NamedTextColor.RED));
     }
 }

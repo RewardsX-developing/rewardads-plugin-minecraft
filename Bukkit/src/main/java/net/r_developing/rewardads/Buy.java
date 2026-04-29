@@ -9,6 +9,7 @@ import org.bukkit.plugin.Plugin;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 public class Buy {
     private final Fetcher fetcher;
@@ -32,7 +33,7 @@ public class Buy {
     }
 
     public void send(Player player, String rewardName) {
-        if(!platform.isProxy()) {
+        if (!platform.isProxy()) {
             String quantity = "1";
             String platformId = platform.getId();
             String userId = config.getUserId(player.getUniqueId());
@@ -44,19 +45,22 @@ public class Buy {
             payload.put("userid", userId);
 
             api.send("buy", payload, result -> {
-                if(result != null) {
-                    boolean success = Boolean.parseBoolean((String) result.get("success"));
-                    String message = result.getOrDefault("message", "Unknown response").toString().toLowerCase().trim();
+                if (result != null) {
+                    Object successObj = result.get("success");
+                    boolean success = successObj != null && Boolean.parseBoolean(Objects.toString(successObj, "false"));
 
-                    String costStr = result.get("cost").toString();
-                    int cost = 0;
-                    if (costStr != null && !costStr.isEmpty()) {
-                        try {
-                            cost = Integer.parseInt(costStr);
-                        } catch(NumberFormatException ignored) {}
-                    }
+                    String message = Objects.toString(result.get("message"), "Unknown response").toLowerCase().trim();
 
                     if (success) {
+                        // Extract and parse cost ONLY if success
+                        String costStr = Objects.toString(result.get("cost"), "0");
+                        int cost = 0;
+                        try {
+                            cost = Integer.parseInt(costStr.trim());
+                        } catch (NumberFormatException ignored) {
+                            // cost remains 0 on parse failure
+                        }
+
                         if (config.getUserId(player.getUniqueId()) != null) {
                             adBits.removeAdBits(player, cost);
                             player.sendMessage(messager.get("buySuccess"));
@@ -76,7 +80,9 @@ public class Buy {
                     player.sendMessage(ChatColor.RED + "INTERNAL ERROR: No response from server.");
                 }
             });
-        } else proxySender.sendCommand(player, "BUY", rewardName);
+        } else {
+            proxySender.sendCommand(player, "BUY", rewardName);
+        }
     }
 
     public void confirm(String userId, String buyId) {
