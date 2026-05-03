@@ -1,7 +1,6 @@
 name: RewardADs
 main: net.r_developing.rewardads.Main
-version: 2026.04.28
-api-version: "1.21.1"
+version: 2026.04.30
 description: RewardADs plugin for Paper
 authors:
   - R_Developing

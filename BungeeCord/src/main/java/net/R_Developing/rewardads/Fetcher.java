@@ -121,7 +121,7 @@ public class Fetcher {
                     api.send("getsuccessbuys", successBuysPayload, result -> {
                         if (result != null) {
                             @SuppressWarnings("unchecked")
-                            List<Map<String, Object>> list = (List<Map<String, Object>>) result.get("successbuys");
+                            List<Map<String, Object>> list = (List<Map<String, Object>>) result.get("buys");
 
                             if (list != null) {
                                 for (Map<String, Object> o : list) {

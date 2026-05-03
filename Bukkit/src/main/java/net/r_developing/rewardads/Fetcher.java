@@ -117,12 +117,12 @@ public class Fetcher {
 
             // 4. successbuys
             if (!platform.isProxy()) {
-                Map<String, Object> successBuysPayload = new HashMap<>();
-                successBuysPayload.put("platform", platform.getId());
-                api.send("getsuccessbuys", successBuysPayload, result -> {
+                Map<String, Object> payload = new HashMap<>();
+                payload.put("platform", platform.getId());
+                api.send("getsuccessbuys", payload, result -> {
                     if (result != null) {
                         @SuppressWarnings("unchecked")
-                        List<Map<String, Object>> list = (List<Map<String, Object>>) result.get("successbuys");
+                        List<Map<String, Object>> list = (List<Map<String, Object>>) result.get("buys");
 
                         if (list != null) {
                             for (Map<String, Object> o : list) {
@@ -136,6 +136,8 @@ public class Fetcher {
                                     buy.confirm(userId, rewardId);
                                 }
                             }
+                        } else {
+                            System.out.println("list is null");
                         }
                     }
                 });
